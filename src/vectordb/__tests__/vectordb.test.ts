@@ -620,6 +620,72 @@ describe('VectorStore', () => {
         }
       }
     })
+
+    it('admits an FTS match outside the semantic candidate pool', async () => {
+      await withTempDb('independent-fts-candidate', async (store) => {
+        const queryVector = [1, ...new Array(383).fill(0)]
+        const vectorAtDistance = (distance: number): number[] => {
+          const similarity = 1 - distance
+          return [similarity, Math.sqrt(1 - similarity * similarity), ...new Array(382).fill(0)]
+        }
+        const semanticChunks = [0.1, 0.4, 0.4, 0.4].map((distance, index) =>
+          createTestChunk(
+            `semantic candidate ${index}`,
+            `/test/semantic-${index}.md`,
+            0,
+            vectorAtDistance(distance)
+          )
+        )
+        const keywordChunk = createTestChunk(
+          'UniqueNeedle exact evidence',
+          '/test/keyword-outside-semantic-pool.md',
+          0,
+          vectorAtDistance(0.41)
+        )
+        const distantChunk = createTestChunk(
+          'unrelated tail',
+          '/test/distant.md',
+          0,
+          vectorAtDistance(0.8)
+        )
+        await store.insertChunks([...semanticChunks, keywordChunk, distantChunk])
+
+        // limit=2 means semantic prefetch contains only four rows. The exact
+        // match is fifth by vector distance, so only independent FTS can admit it.
+        const results = await store.search(queryVector, {
+          queryText: 'UniqueNeedle',
+          limit: 2,
+          candidateMode: 'expanded',
+        })
+
+        const defaultResults = await store.search(queryVector, {
+          queryText: 'UniqueNeedle',
+          limit: 2,
+        })
+        expect(defaultResults.map((result) => result.id)).not.toContain(keywordChunk.id)
+
+        expect(results.map((result) => result.id)).toContain(keywordChunk.id)
+        expect(results.filter((result) => result.id === keywordChunk.id)).toHaveLength(1)
+
+        // The merged candidate uses its real vector distance before receiving
+        // the unchanged default keyword boost (normalized BM25 score is 1).
+        const vectorOnlyStore = new VectorStore({
+          dbPath: './tmp/test-vectordb-independent-fts-candidate',
+          tableName: 'chunks',
+          hybridWeight: 0,
+        })
+        await vectorOnlyStore.initialize()
+        try {
+          const vectorOnly = await vectorOnlyStore.search(queryVector, { limit: 20 })
+          const rawDistance = vectorOnly.find((result) => result.id === keywordChunk.id)?.score
+          const boostedDistance = results.find((result) => result.id === keywordChunk.id)?.score
+          expect(rawDistance).toBeDefined()
+          expect(boostedDistance).toBeCloseTo(expectDefined(rawDistance) / 1.6, 6)
+        } finally {
+          await vectorOnlyStore.close()
+        }
+      })
+    })
   })
 
   /**

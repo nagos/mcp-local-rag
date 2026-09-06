@@ -55,13 +55,20 @@ function asRecord(raw: unknown, label: string): Record<string, unknown> {
  */
 export function parseQueryDocumentsInput(raw: unknown): QueryDocumentsInput {
   const obj = asRecord(raw, 'query_documents')
-  const { query, limit, scope } = obj
+  const { query, limit, scope, candidateMode } = obj
 
   if (typeof query !== 'string' || query.trim().length === 0) {
     throw new McpError(ErrorCode.InvalidParams, 'query must be a non-empty string')
   }
 
   const input: QueryDocumentsInput = { query }
+
+  if (candidateMode !== undefined) {
+    if (candidateMode !== 'legacy' && candidateMode !== 'expanded') {
+      throw new McpError(ErrorCode.InvalidParams, 'candidateMode must be either legacy or expanded')
+    }
+    input.candidateMode = candidateMode
+  }
 
   if (limit !== undefined) {
     // Bound to the shared range at the entry boundary — the same range

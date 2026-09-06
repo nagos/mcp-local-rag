@@ -165,7 +165,7 @@ or image search.
 | `sync_status` | Poll a running sync job |
 | `ingest_file` | Ingest or replace one file |
 | `ingest_data` | Ingest text, Markdown, or HTML already held by the client |
-| `query_documents` | Search with semantic matching and keyword boost |
+| `query_documents` | Search with semantic matching and keyword boost; set `candidateMode: "expanded"` to include independent BM25 candidates |
 | `read_chunk_neighbors` | Read surrounding chunks from a search result |
 | `list_files` | Show supported files and their ingestion state |
 | `delete_file` | Delete an indexed file or an `ingest_data` item |

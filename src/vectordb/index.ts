@@ -382,6 +382,129 @@ export class VectorStore {
     }
   }
 
+  private async retrieveKeywordCandidates(
+    table: Table,
+    options: {
+      queryVector: number[]
+      queryText: string
+      scope: SearchOptions['scope']
+      candidateLimit: number
+    }
+  ): Promise<{ ftsResults: Record<string, unknown>[]; keywordCandidates: SearchResult[] }> {
+    const { queryVector, queryText, scope, candidateLimit } = options
+    let ftsQuery = table
+      .search(queryText, 'fts', 'text')
+      .select(['id', 'filePath', 'chunkIndex', 'text', 'metadata', 'fileTitle', '_score'])
+      .limit(candidateLimit)
+
+    if (scope && scope.length > 0) {
+      ftsQuery = ftsQuery.where(this.buildScopePredicate(scope))
+    }
+
+    const ftsResults = await ftsQuery.toArray()
+    const ftsIds = [
+      ...new Set(
+        ftsResults.flatMap((result) =>
+          typeof result['id'] === 'string' && result['id'].length > 0 ? [result['id']] : []
+        )
+      ),
+    ]
+    if (ftsIds.length === 0) {
+      return { ftsResults, keywordCandidates: [] }
+    }
+
+    const escapedIds = ftsIds.map((id) => `'${this.escapeQuotes(id)}'`)
+    let ftsVectorQuery = table
+      .vectorSearch(queryVector)
+      .distanceType('dot')
+      .where(`\`id\` IN (${escapedIds.join(', ')})`)
+      .select(['id', 'filePath', 'chunkIndex', 'text', 'metadata', 'fileTitle', '_distance'])
+      .limit(ftsIds.length)
+
+    if (this.config.maxDistance !== undefined) {
+      ftsVectorQuery = ftsVectorQuery.distanceRange(undefined, this.config.maxDistance)
+    }
+
+    const keywordCandidates = (await ftsVectorQuery.toArray()).map((result) =>
+      toSearchResult(result)
+    )
+    return { ftsResults, keywordCandidates }
+  }
+
+  private async expandCandidates(
+    table: Table,
+    options: {
+      queryVector: number[]
+      queryText: string | undefined
+      scope: SearchOptions['scope']
+      candidateLimit: number
+      hybridWeight: number
+    },
+    results: SearchResult[]
+  ): Promise<{ results: SearchResult[]; ftsResults: Record<string, unknown>[] }> {
+    const { queryVector, queryText, scope, candidateLimit, hybridWeight } = options
+    if (!this.ftsEnabled || !queryText || queryText.trim().length === 0 || hybridWeight <= 0) {
+      return { results, ftsResults: [] }
+    }
+
+    try {
+      const { ftsResults, keywordCandidates } = await this.retrieveKeywordCandidates(table, {
+        queryVector,
+        queryText,
+        scope,
+        candidateLimit,
+      })
+      if (keywordCandidates.length > 0) {
+        const seenIds = new Set(results.map((result) => result.id))
+        for (const candidate of keywordCandidates) {
+          if (seenIds.has(candidate.id)) {
+            continue
+          }
+          seenIds.add(candidate.id)
+          results.push(candidate)
+        }
+        results.sort((left, right) => left.score - right.score)
+      }
+      return { results, ftsResults }
+    } catch (ftsError) {
+      console.error('VectorStore: FTS search failed, using vector-only results:', ftsError)
+      return { results, ftsResults: [] }
+    }
+  }
+
+  private boostExpandedResults(
+    results: SearchResult[],
+    ftsResults: Record<string, unknown>[],
+    hybridWeight: number
+  ): SearchResult[] {
+    if (ftsResults.length === 0) {
+      return results
+    }
+    try {
+      return applyKeywordBoost(results, ftsResults, hybridWeight)
+    } catch (boostError) {
+      console.error('VectorStore: Keyword boost failed, using vector-only scores:', boostError)
+      return results
+    }
+  }
+
+  private shouldBoostLegacy(
+    results: SearchResult[],
+    queryText: string | undefined,
+    hybridWeight: number
+  ): queryText is string {
+    // `results.length > 0` guards the FTS branch: with zero vector hits the
+    // IN clause would degrade to a malformed `filePath IN ()`, and there is
+    // nothing to rerank anyway. FTS inherits scope through those hits.
+    return (
+      this.ftsEnabled &&
+      queryText !== undefined &&
+      queryText.trim().length > 0 &&
+      hybridWeight > 0 &&
+      results.length > 0
+    )
+  }
+
   async search(queryVector: number[], options: SearchOptions = {}): Promise<SearchResult[]> {
     const { queryText, limit = 10, scope } = options
     await this.openExistingTable()
@@ -421,23 +544,28 @@ export class VectorStore {
       // Convert to SearchResult format with type validation
       let results: SearchResult[] = vectorResults.map((result) => toSearchResult(result))
 
+      const hybridWeight = this.config.hybridWeight ?? DEFAULT_HYBRID_WEIGHT
+      let ftsResults: Record<string, unknown>[] | null = null
+      if (options.candidateMode === 'expanded') {
+        // Independent FTS hits enter the pool with their actual vector distances.
+        const expanded = await this.expandCandidates(
+          this.table,
+          { queryVector, queryText, scope, candidateLimit, hybridWeight },
+          results
+        )
+        results = expanded.results
+        ftsResults = expanded.ftsResults
+      }
+
       // Step 2: Apply grouping filter on vector distances (before keyword boost)
       // Grouping is meaningful only on semantic distances, not after keyword boost
       if (this.config.grouping && results.length > 1) {
         results = applyGrouping(results, this.config.grouping)
       }
 
-      // `results.length > 0` guards the FTS branch: with zero vector hits the
-      // IN clause would degrade to a malformed `filePath IN ()`, and there is
-      // nothing to rerank anyway. FTS inherits scope through those hits.
-      const hybridWeight = this.config.hybridWeight ?? DEFAULT_HYBRID_WEIGHT
-      if (
-        this.ftsEnabled &&
-        queryText &&
-        queryText.trim().length > 0 &&
-        hybridWeight > 0 &&
-        results.length > 0
-      ) {
+      if (ftsResults !== null) {
+        results = this.boostExpandedResults(results, ftsResults, hybridWeight)
+      } else if (this.shouldBoostLegacy(results, queryText, hybridWeight)) {
         results = await this.boostWithKeywords(results, queryText, hybridWeight)
       }
 

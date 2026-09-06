@@ -224,7 +224,12 @@ describe('handleQueryDocuments → VectorStore.search() options boundary', () =>
     const vector = call[0]
     const options = expectDefined(call[1])
     expect(vector).toEqual(queryVector)
-    expect(options).toEqual({ queryText: 'typescript', limit: 7, scope: ['/docs', '/src'] })
+    expect(options).toEqual({
+      queryText: 'typescript',
+      limit: 7,
+      candidateMode: 'legacy',
+      scope: ['/docs', '/src'],
+    })
   })
 
   it('passes scope: undefined when scope is absent', async () => {
@@ -241,6 +246,19 @@ describe('handleQueryDocuments → VectorStore.search() options boundary', () =>
     // limit defaulting preserved (?? 10) and query threaded as queryText
     expect(options.queryText).toBe('typescript')
     expect(options.limit).toBe(10)
+    expect(options.candidateMode).toBe('legacy')
     expect(Object.hasOwn(options, 'scope')).toBe(false)
+  })
+
+  it('passes expanded candidate retrieval only when requested', async () => {
+    vi.spyOn(internals(server).embedder, 'embed').mockResolvedValue(queryVector)
+    const searchSpy = vi
+      .spyOn(internals(server).vectorStore, 'search')
+      .mockResolvedValue(emptyResults)
+
+    await server.handleQueryDocuments({ query: 'typescript', candidateMode: 'expanded' })
+
+    const options = expectDefined(expectDefined(searchSpy.mock.calls[0])[1])
+    expect(options.candidateMode).toBe('expanded')
   })
 })

@@ -79,6 +79,8 @@ export type RAGServerConfig =
 export interface QueryDocumentsInput {
   /** Natural language query */
   query: string
+  /** Independent BM25 candidates are opt-in. */
+  candidateMode?: 'legacy' | 'expanded'
   /** Number of results to retrieve (default 10) */
   limit?: number
   /** Path prefix scope (one or a list); the parser normalizes to `string[]`. */

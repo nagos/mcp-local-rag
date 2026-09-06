@@ -18,6 +18,16 @@ describe('parseQueryDocumentsInput', () => {
     expect(parseQueryDocumentsInput({ query: 'hello' })).toEqual({ query: 'hello' })
   })
 
+  it('accepts an explicit expanded candidate mode and rejects unknown modes', () => {
+    expect(parseQueryDocumentsInput({ query: 'hello', candidateMode: 'expanded' })).toEqual({
+      query: 'hello',
+      candidateMode: 'expanded',
+    })
+    expect(() => parseQueryDocumentsInput({ query: 'hello', candidateMode: 'all' })).toThrow(
+      /candidateMode must be either legacy or expanded/
+    )
+  })
+
   it('accepts a valid query with an integer limit', () => {
     expect(parseQueryDocumentsInput({ query: 'hello', limit: 5 })).toEqual({
       query: 'hello',

@@ -525,6 +525,7 @@ export class RAGServer {
     const candidates = await this.vectorStore.search(queryVector, {
       queryText: args.query,
       limit: candidateLimit,
+      candidateMode: args.candidateMode === 'expanded' ? 'expanded' : 'legacy',
       ...(args.scope !== undefined ? { scope: toArray(args.scope) } : {}),
     })
 

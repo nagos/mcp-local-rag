@@ -23,6 +23,13 @@ export const toolDefinitions: Tool[] = [
           description:
             'Search query. Preserve specific user terms (for keyword match); add context when the query is vague (for semantic match).',
         },
+        candidateMode: {
+          type: 'string',
+          enum: ['legacy', 'expanded'],
+          default: 'legacy',
+          description:
+            'legacy preserves existing vector-prefetch ranking; expanded opts into independent BM25 candidates.',
+        },
         limit: {
           type: 'number',
           minimum: MIN_QUERY_LIMIT,

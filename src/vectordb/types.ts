@@ -54,6 +54,8 @@ export interface VectorStoreConfig {
  * is not a breaking signature change.
  */
 export interface SearchOptions {
+  /** Existing vector-prefetch ranking or independent BM25 candidate retrieval. */
+  candidateMode?: 'legacy' | 'expanded'
   /** Optional query text for keyword boost (BM25) */
   queryText?: string
   /**
