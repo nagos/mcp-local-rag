@@ -49,7 +49,11 @@ describe('buildChunksAndEmbeddings title prefix', () => {
     const result = await buildChunksAndEmbeddings(
       'Body.',
       asDouble<SemanticChunker>({ chunkText }),
-      { embedBatch, titlePrefix, ...embedder },
+      {
+        embedBatch,
+        getDocumentPrefix: async () => (titlePrefix ? 'Title: Support Rotation\n\n' : ''),
+        ...embedder,
+      },
       { title: 'Support Rotation' }
     )
     return { result, chunkText, embedBatch }
@@ -77,18 +81,16 @@ describe('buildChunksAndEmbeddings title prefix', () => {
     await buildChunksFromParseResult(
       { content: 'Body.', title: 'Body text from page 1', embeddingTitle: 'quarterly report' },
       asDouble<SemanticChunker>({ chunkText }),
-      { embedBatch, titlePrefix: true }
+      { embedBatch, getDocumentPrefix: async (title) => `Title: ${title}\n\n` }
     )
 
     expect(embedBatch).toHaveBeenCalledWith(['Title: quarterly report\n\nBody.'])
   })
 
-  it('drops a title that would take more than half the token window', async () => {
-    const { embedBatch } = await run(true, {
-      getTokenLimit: async () => 10,
-      countTokens: async (texts) => texts.map(() => 6),
-    })
-
+  it('delegates the title fallback to getDocumentPrefix', async () => {
+    const getDocumentPrefix = vi.fn().mockResolvedValue('')
+    const { embedBatch } = await run(true, { getDocumentPrefix })
+    expect(getDocumentPrefix).toHaveBeenCalledWith('Support Rotation')
     expect(embedBatch).toHaveBeenCalledWith(['Body.'])
   })
 })
@@ -170,7 +172,7 @@ describe('buildChunksAndEmbeddings heading prefix', () => {
       }),
       {
         embedBatch,
-        titlePrefix: true,
+        getDocumentPrefix: async (title) => `Title: ${title}\n\n`,
         headingPrefix: true,
         getTokenLimit: async () => 80,
         countTokens: async (texts) => texts.map((value) => value.length),
@@ -188,7 +190,11 @@ describe('buildChunksAndEmbeddings heading prefix', () => {
       asDouble<SemanticChunker>({
         chunkText: async () => [{ text, index: 0, sourceStart: 0, sourceEnd: text.length }],
       }),
-      { embedBatch, titlePrefix: true, headingPrefix: true },
+      {
+        embedBatch,
+        getDocumentPrefix: async (title) => `Title: ${title}\n\n`,
+        headingPrefix: true,
+      },
       {
         title: 'Guide',
         sourceMap: {

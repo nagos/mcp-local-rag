@@ -9,6 +9,7 @@ import {
   resolveDevice,
   resolveDtype,
 } from './cli/options.js'
+import { resolveTitlePrefixEnv } from './embedder/prefixes.js'
 import { RAGServer } from './server/index.js'
 import { BaseDirsConfigError, parseBaseDirsEnv, resolveBaseDirs } from './utils/base-dirs.js'
 import {
@@ -184,7 +185,7 @@ function applyOptionalSettings(config: ServerConfig, env: NodeJS.ProcessEnv): st
   const hybridWeight = parseHybridWeight(env['RAG_HYBRID_WEIGHT'])
   const chunkMinLength = parseChunkMinLength(env['CHUNK_MIN_LENGTH'])
   const storeImages = parseStoreImages(env['STORE_IMAGES'])
-  const titlePrefix = parseBooleanEnv('EMBED_TITLE_PREFIX', env['EMBED_TITLE_PREFIX'])
+  const titlePrefix = resolveTitlePrefixEnv(config.modelName, env['EMBED_TITLE_PREFIX'])
   const headingPrefix = parseBooleanEnv('EMBED_HEADING_PREFIX', env['EMBED_HEADING_PREFIX'])
   const rerankCommand = parseRerankCmd(env['RAG_RERANK_CMD'])
   const rerankTimeoutMs = parseRerankTimeoutMs(env['RAG_RERANK_TIMEOUT_MS'])

@@ -29,28 +29,6 @@ function distanceToSpan(offset: number, chunk: TextChunk): number {
   return 0
 }
 
-/**
- * The `Title:` header a chunk is embedded behind, or `''` when the embedder
- * does not opt in, there is no title, or the header would take more than half
- * the token window: the chunker budgets every chunk for it, so a header near
- * the cap would shred the body into near-empty chunks.
- */
-async function resolveTitlePrefix(
-  title: string | null | undefined,
-  embedder: EmbedderInterface
-): Promise<string> {
-  if (!embedder.titlePrefix || !title) {
-    return ''
-  }
-  const prefix = `Title: ${title}\n\n`
-  const budget = await resolveContainmentBudget(embedder, '')
-  if (budget === null) {
-    return prefix
-  }
-  const [tokens = 0] = await budget.countTokens([prefix])
-  return tokens <= budget.cap / 2 ? prefix : ''
-}
-
 /** `embeddings` has the same length as `chunks`, index for index. */
 export interface BuildChunksAndEmbeddingsResult {
   chunks: (TextChunk & { sourceContext?: SourceContext })[]
@@ -124,7 +102,7 @@ export async function buildChunksAndEmbeddings(
     title?: string | null | undefined
   } = {}
 ): Promise<BuildChunksAndEmbeddingsResult> {
-  const prefix = await resolveTitlePrefix(options.title, embedder)
+  const prefix = (await embedder.getDocumentPrefix?.(options.title)) ?? ''
   const chunks = await chunker.chunkText(text, embedder, options.atomicRanges, prefix)
   // F5: Skip `embedBatch` entirely on zero chunks. `embedBatch` runs
   // `ensureInitialized()` (which triggers the ~90MB MiniLM download on a
@@ -182,7 +160,7 @@ async function embeddingInputs(
 
 /**
  * Preserve the parser content/range mapping at one shared boundary. The title
- * affects embeddings only when the embedder opts into the title prefix.
+ * is passed to the embedder's retrieval-prefix policy.
  */
 export async function buildChunksFromParseResult(
   result: ParseResult,

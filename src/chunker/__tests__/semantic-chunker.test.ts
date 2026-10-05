@@ -7,6 +7,7 @@ import type { TextChunk } from '../index.js'
 import {
   DEFAULT_MIN_CHUNK_LENGTH,
   isGarbageChunk,
+  resolveContainmentBudget,
   SemanticChunker,
   type SemanticChunkerConfig,
 } from '../semantic-chunker.js'
@@ -210,7 +211,7 @@ Topic B is completely different. Topic B continues here.`
 
       const result = await chunker.chunkText(row, mockEmbedder, [{ start: 0, end: row.length }])
 
-      expect(mockEmbedder.embedBatch).toHaveBeenCalledWith([row])
+      expect(mockEmbedder.embedBatch).toHaveBeenCalledWith([row], 'similarity')
       expect(result).toEqual([{ text: row, index: 0, sourceStart: 0, sourceEnd: row.length }])
     })
 
@@ -227,7 +228,7 @@ Topic B is completely different. Topic B continues here.`
         { start: rowStart, end: rowStart + row.length },
       ])
 
-      expect(mockEmbedder.embedBatch).toHaveBeenCalledWith([before, row, after])
+      expect(mockEmbedder.embedBatch).toHaveBeenCalledWith([before, row, after], 'similarity')
       expect(result).toEqual([
         {
           text: `${before} ${row} ${after}`,
@@ -814,4 +815,19 @@ describe('Boundary preservation against main', () => {
       expect(chunks).toEqual(mainChunks)
     }
   )
+})
+
+describe('typed containment budget', () => {
+  it('uses the maximum of document and typed sentence lengths', async () => {
+    const countTokens = vi.fn(async (texts: string[], type?: 'query' | 'similarity') =>
+      texts.map((text) => text.length + (type === 'similarity' ? 20 : 0))
+    )
+    const embedder = { embedBatch: vi.fn(), countTokens, getTokenLimit: async () => 100 }
+    const similarityBudget = await resolveContainmentBudget(embedder, 'Title: ', 'similarity')
+    await expect(similarityBudget?.countTokens(['abc'])).resolves.toEqual([23])
+    const documentBudget = await resolveContainmentBudget(embedder, 'x'.repeat(30), 'similarity')
+    await expect(documentBudget?.countTokens(['abc'])).resolves.toEqual([33])
+    const finalBudget = await resolveContainmentBudget(embedder, 'Title: ')
+    await expect(finalBudget?.countTokens(['abc'])).resolves.toEqual([10])
+  })
 })

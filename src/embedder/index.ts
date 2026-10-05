@@ -7,8 +7,15 @@ import {
   ModelRegistry,
   pipeline,
 } from '@huggingface/transformers'
-import { AppError, toError } from '../utils/errors.js'
+import { toError } from '../utils/errors.js'
 import { isObjectLike } from '../utils/type-guards.js'
+import { EmbeddingError } from './errors.js'
+import { type EmbeddingInference, resolveInference } from './inference.js'
+import { getInputPrefix, resolveDocumentPrefix } from './prefixes.js'
+import type { EmbeddingPipeline, EmbeddingType, PipelineTokenizer } from './types.js'
+
+export { EmbeddingError } from './errors.js'
+export type { PipelineTokenizer } from './types.js'
 
 // ============================================
 // Type Definitions
@@ -34,7 +41,7 @@ export interface EmbedderConfig {
   dtype?: string
   /**
    * Embed document chunks behind a `Title:` line naming their document
-   * (default: false). Read by ingestion, which builds the embedding input.
+   * (default: false). Fallback for models without a native prefix policy.
    */
   titlePrefix?: boolean
   /** Add section paths to chunk embeddings when they fit (default: false). */
@@ -45,41 +52,6 @@ interface IndexedEmbeddingInput {
   text: string
   originalIndex: number
   tokenLength: number
-}
-
-interface TokenizerOptions {
-  padding?: boolean
-  truncation?: boolean
-  return_tensor?: boolean
-  max_length?: number
-}
-
-export interface PipelineTokenizer {
-  (input: string[], options: TokenizerOptions): { input_ids?: unknown } | null | undefined
-  /** `unknown` because a model may omit it or report a sentinel; see {@link usableTokenLimit}. */
-  model_max_length?: unknown
-}
-
-interface PipelineModelConfig {
-  max_position_embeddings?: unknown
-}
-
-/**
- * The transformers.js pipeline as this module calls it.
- *
- * Every result field is typed as loosely as the runtime admits — `dims`
- * included, since {@link isEmbeddingPipeline} establishes only that the value
- * is callable and carries a `tokenizer`. That keeps each call site's own shape
- * check load-bearing rather than dead under an optimistic declaration.
- */
-interface EmbeddingPipeline {
-  (
-    input: string[],
-    options: unknown
-  ): Promise<{ data?: unknown; dims?: unknown } | null | undefined>
-  tokenizer: PipelineTokenizer
-  /** Optional: a model reporting no position window takes the tokenizer-only branch. */
-  model?: { config?: PipelineModelConfig }
 }
 
 /** True when the loaded pipeline exposes the call and tokenizer surface used here. */
@@ -239,20 +211,6 @@ function deferBatchOutliers(inputs: IndexedEmbeddingInput[]): {
 }
 
 // ============================================
-// Error Classes
-// ============================================
-
-/**
- * Embedding generation error
- */
-export class EmbeddingError extends AppError {
-  constructor(message: string, options?: { cause?: Error }) {
-    super(message, 'embedder', 'internal', options)
-    this.name = 'EmbeddingError'
-  }
-}
-
-// ============================================
 // Embedder Class
 // ============================================
 
@@ -272,17 +230,28 @@ export class Embedder {
   private truncationWarned: boolean = false
   private degradedModeWarned: boolean = false
   private readonly config: EmbedderConfig
+  private readonly inference: EmbeddingInference
 
   constructor(config: EmbedderConfig) {
     this.config = config
+    this.inference = resolveInference(config.modelPath)
   }
 
   get headingPrefix(): boolean {
     return this.config.headingPrefix ?? false
   }
 
-  get titlePrefix(): boolean {
-    return this.config.titlePrefix ?? false
+  /** Retrieval document header; callers add it once, after semantic chunking. */
+  async getDocumentPrefix(title?: string | null): Promise<string> {
+    return resolveDocumentPrefix(
+      this.config.modelPath,
+      this.config.titlePrefix ?? false,
+      title,
+      async () => ({
+        cap: await this.getTokenLimit(),
+        countTokens: (texts) => this.countTokens(texts),
+      })
+    )
   }
 
   /**
@@ -472,7 +441,7 @@ export class Embedder {
    * when no such tokenizer was captured, rather than returning a length
    * measured through an unknown surface.
    */
-  async countTokens(texts: string[]): Promise<number[]> {
+  async countTokens(texts: string[], type?: EmbeddingType): Promise<number[]> {
     if (texts.length === 0) {
       return []
     }
@@ -484,7 +453,12 @@ export class Embedder {
       throw new EmbeddingError('Embedder tokenizer is unavailable for measurement')
     }
 
-    const tokenized = tokenizer(texts, { padding: false, truncation: false, return_tensor: false })
+    const prefix = getInputPrefix(this.config.modelPath, type)
+    const tokenized = tokenizer(prefix ? texts.map((text) => prefix + text) : texts, {
+      padding: false,
+      truncation: false,
+      return_tensor: false,
+    })
     const inputIds = tokenized?.input_ids
     if (!isTokenLengthArray(inputIds) || inputIds.length !== texts.length) {
       throw new EmbeddingError('Unexpected embedder tokenizer output shape')
@@ -494,12 +468,13 @@ export class Embedder {
 
   /**
    * Single-text embedding; the vector dimension depends on the model.
+   * Optional type prepares raw query/similarity input; omitted type accepts prepared text.
    *
    * Delegates to {@link embedBatch} so this path shares its clamp, measurement
    * and warning rather than reaching the pipeline unguarded.
    */
-  async embed(text: string): Promise<number[]> {
-    const embeddings = await this.embedBatch([text])
+  async embed(text: string, type?: EmbeddingType): Promise<number[]> {
+    const embeddings = await this.embedBatch([text], type)
     const embedding = embeddings[0]
     if (embedding === undefined) {
       throw new EmbeddingError('Missing embedder batch output row')
@@ -507,8 +482,11 @@ export class Embedder {
     return embedding
   }
 
-  /** Batched embedding; the vector dimension depends on the model. */
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  /**
+   * Batched embedding; the vector dimension depends on the model.
+   * Optional type prepares raw query/similarity input; omitted type accepts prepared text.
+   */
+  async embedBatch(texts: string[], type?: EmbeddingType): Promise<number[][]> {
     // Nothing to embed → skip model init entirely.
     if (texts.length === 0) {
       return []
@@ -518,11 +496,14 @@ export class Embedder {
       throw new EmbeddingError('Cannot generate embedding for empty text')
     }
 
+    const prefix = getInputPrefix(this.config.modelPath, type)
+    if (prefix) {
+      texts = texts.map((text) => prefix + text)
+    }
     // Lazy initialization: initialize on first use if not already initialized
     await this.ensureInitialized()
 
     try {
-      const options = { pooling: 'mean', normalize: true }
       // True batched inference: the pipeline takes an array and returns one
       // [batchLen, dim] tensor per forward pass. Calling it once per text via
       // Promise.all made `batchSize` meaningless, since onnxruntime inference
@@ -539,9 +520,9 @@ export class Embedder {
       const deferred: IndexedEmbeddingInput[] = []
 
       const embedInputs = async (inputs: IndexedEmbeddingInput[]): Promise<void> => {
-        const output = await modelCall(
-          inputs.map((input) => input.text),
-          options
+        const output = await this.inference(
+          modelCall,
+          inputs.map((input) => input.text)
         )
 
         // Validate the output shape before slicing so a runtime/model contract

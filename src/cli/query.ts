@@ -190,11 +190,7 @@ export async function runQuery(args: string[], globalOptions: GlobalOptions = {}
 
   try {
     // Generate query embedding
-    const embeddings = await embedder.embedBatch([queryText])
-    const queryVector = embeddings[0]
-    if (!queryVector) {
-      throw new Error('Failed to generate query embedding')
-    }
+    const queryVector = await embedder.embed(queryText, 'query')
 
     // Hybrid search (vector + BM25). Thread scope only when present so the
     // scope-absent call shape stays identical to the pre-flag behavior.

@@ -275,8 +275,21 @@ used; roots from different sources are not merged. Invalid `BASE_DIRS` is an err
 <summary>Models and Search Tuning</summary>
 
 Choose an embedding model for your documents’ language and subject. Compare settings using
-questions you actually ask and check which source passages are returned. The model must support
-mean pooling and L2 normalization, which this tool uses to produce embeddings.
+questions you actually ask and check which source passages are returned.
+
+The following models automatically use model-specific embedding settings. Other compatible
+models use the default setup.
+
+| Model | Embedding output / pooling | Query prefix | Document prefix | Similarity prefix |
+| --- | --- | --- | --- | --- |
+| `onnx-community/embeddinggemma-300m-ONNX` | Native normalized `sentence_embedding` | `task: search result \| query: ` | `title: <title or none> \| text: ` | `task: sentence similarity \| query: ` |
+| `Xenova/bge-small-en-v1.5` | CLS pooling + L2 normalization | `Represent this sentence for searching relevant passages: ` | None | None |
+| `Xenova/all-MiniLM-L6-v2` | Mean pooling + L2 normalization | None | Optional `Title: <title>\n\n` | None |
+| Other compatible models | Mean pooling + L2 normalization | None | Optional `Title: <title>\n\n` | None |
+
+Model-specific settings apply only to the exact names above. `EMBED_TITLE_PREFIX` enables
+the optional document title prefix where indicated in the table.
+Prefixes are added only to embedding inputs.
 
 | Environment Variable | CLI Flag | Default | Description |
 |---------------------|----------|---------|-------------|
@@ -287,8 +300,9 @@ mean pooling and L2 normalization, which this tool uses to produce embeddings.
 | `RAG_DEVICE` | N/A | `cpu` | ONNX Runtime execution device |
 | `RAG_DTYPE` | N/A | `fp32` | Embedding dtype passed to the selected model |
 
-Both prefix options default to `false` and work independently. Try `EMBED_TITLE_PREFIX` when a
-passage needs the document’s overall topic, or `EMBED_HEADING_PREFIX` when it needs its
+Both prefix options default to `false` and work independently for models using optional prefixes.
+Try `EMBED_TITLE_PREFIX` when a passage needs the document’s overall topic, or
+`EMBED_HEADING_PREFIX` when it needs its
 section’s topic. Enabling both is not always better. They affect embeddings, not the returned
 text or keyword index; heading context is omitted when it would exceed the input budget.
 

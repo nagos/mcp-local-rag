@@ -135,6 +135,7 @@ async function makeServer(testCase: Case): Promise<ServerInstance> {
     })
   )
   const embedder = privateMembers<{ embedder: Embedder }>(server).embedder
+  vi.spyOn(embedder, 'getTokenLimit').mockResolvedValue(null)
   vi.spyOn(embedder, 'embedBatch').mockImplementation(async (texts: string[]) =>
     deterministicEmbeddings(texts)
   )

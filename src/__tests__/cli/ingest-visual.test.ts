@@ -116,7 +116,7 @@ const chunkerFactory = () => ({
 const cliCommonFactory = () => ({
   createEmbedder: vi.fn().mockImplementation(() => ({
     embedBatch: mocks.embedBatch,
-    titlePrefix: mocks.titlePrefix,
+    getDocumentPrefix: async (title: string) => (mocks.titlePrefix ? `Title: ${title}\n\n` : ''),
     dispose: vi.fn(),
   })),
   createVectorStore: vi.fn().mockImplementation(() => ({

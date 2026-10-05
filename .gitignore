@@ -22,7 +22,7 @@ dist/
 coverage
 test-output.json
 lancedb/
-models/
+/models/
 
 # IDE and editor specific files
 .vscode/

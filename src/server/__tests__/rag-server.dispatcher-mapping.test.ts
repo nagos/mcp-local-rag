@@ -444,6 +444,7 @@ describe('External mutation guard at the dispatch boundary (SYNC-007)', () => {
 
   function stubEmbedder(): void {
     const embedder = internals(server).embedder
+    vi.spyOn(embedder, 'getTokenLimit').mockResolvedValue(null)
     vi.spyOn(embedder, 'embedBatch').mockImplementation(async (texts: string[]) => {
       if (embedGate !== null) {
         await embedGate.pending

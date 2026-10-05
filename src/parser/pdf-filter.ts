@@ -586,7 +586,7 @@ async function detectBoundaryPattern(params: {
     endIndex,
   } = params
 
-  const embeddings = await embedder.embedBatch(sentences)
+  const embeddings = await embedder.embedBatch(sentences, 'similarity')
   const medianSim = medianPairwiseSimilarity(embeddings)
 
   // Determine effective threshold (boosted if block hints match)

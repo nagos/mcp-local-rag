@@ -2,6 +2,7 @@
 // plus base-directory resolution shared by every subcommand that scans files.
 
 import { Embedder } from '../embedder/index.js'
+import { resolveTitlePrefixEnv } from '../embedder/prefixes.js'
 import {
   type BaseDirsConfig,
   type BaseDirsConfigWarning,
@@ -78,7 +79,7 @@ export function createEmbedder(config: ResolvedGlobalConfig): Embedder {
   if (dtype !== undefined) {
     embedderConfig.dtype = dtype
   }
-  const titlePrefix = parseBooleanEnv('EMBED_TITLE_PREFIX', process.env['EMBED_TITLE_PREFIX'])
+  const titlePrefix = resolveTitlePrefixEnv(config.modelName, process.env['EMBED_TITLE_PREFIX'])
   if (titlePrefix.warning !== undefined) {
     console.error(titlePrefix.warning)
   }

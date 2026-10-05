@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => {
     hydrateVisualAttachments: vi.fn().mockResolvedValue({ rows: [], omittedCount: 0 }),
 
     // Embedder methods
-    embedBatch: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+    embed: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
   }
 })
 
@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => {
 
 const cliCommonFactory = () => ({
   createEmbedder: vi.fn().mockImplementation(() => ({
-    embedBatch: mocks.embedBatch,
+    embed: mocks.embed,
     dispose: vi.fn(),
   })),
   createVectorStore: vi.fn().mockImplementation(() => ({
@@ -306,12 +306,12 @@ describe('CLI query', () => {
     expect(mocks.hydrateVisualAttachments).toHaveBeenCalledWith([result])
   })
 
-  it('should use embedBatch with query text for embedding generation', async () => {
+  it('should use embed with query type for embedding generation', async () => {
     mocks.search.mockResolvedValue([])
 
     await captureOutput(() => runQuery(['my search query']))
 
-    expect(mocks.embedBatch).toHaveBeenCalledWith(['my search query'])
+    expect(mocks.embed).toHaveBeenCalledWith('my search query', 'query')
   })
 
   it('should pass limit to vectorStore.search', async () => {

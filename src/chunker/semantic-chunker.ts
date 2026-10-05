@@ -1,6 +1,7 @@
 // Semantic Chunker implementation using Max-Min algorithm
 // Based on: "Max–Min semantic chunking of documents for RAG application" (Springer, 2025)
 
+import type { EmbeddingType } from '../embedder/types.js'
 import type { AtomicTextRange, TextChunk } from './index.js'
 import { type SentenceUnit, splitIntoSentenceUnits } from './sentence-splitter.js'
 import {
@@ -35,13 +36,13 @@ export interface SemanticChunkerConfig {
  * skips token containment.
  */
 export interface EmbedderInterface {
-  embedBatch(texts: string[]): Promise<number[][]>
+  embedBatch(texts: string[], type?: EmbeddingType): Promise<number[][]>
   /** Resolved token cap, or `null` when no limit could be resolved. */
   getTokenLimit?(): Promise<number | null>
   /** True, unclamped token lengths of each text. */
-  countTokens?(texts: string[]): Promise<number[]>
-  /** Whether ingestion embeds chunks behind their document title. */
-  readonly titlePrefix?: boolean
+  countTokens?(texts: string[], type?: EmbeddingType): Promise<number[]>
+  /** Model-specific retrieval prefix, including any title-budget fallback. */
+  getDocumentPrefix?(title?: string | null): Promise<string>
   /** Whether ingestion adds section paths to the final embedding input. */
   readonly headingPrefix?: boolean
 }
@@ -119,11 +120,13 @@ function joinUnits(units: readonly SentenceUnit[]): string {
  * or no limit could be resolved. Containment is then skipped entirely.
  *
  * Every measurement is taken with `textPrefix` prepended, since the caller
- * embeds each chunk behind it.
+ * embeds each chunk behind it. With a type, also measure the independently
+ * prepared sentence input and use the larger token count.
  */
 export async function resolveContainmentBudget(
   embedder: EmbedderInterface,
-  textPrefix: string
+  textPrefix: string,
+  type?: EmbeddingType
 ): Promise<ContainmentBudget | null> {
   const { getTokenLimit, countTokens } = embedder
   if (!getTokenLimit || !countTokens) {
@@ -133,14 +136,24 @@ export async function resolveContainmentBudget(
   if (cap === null) {
     return null
   }
-  return {
+  const budget: ContainmentBudget = {
     cap,
-    countTokens: (texts) =>
-      countTokens.call(
+    countTokens: async (texts) => {
+      const lengths = await countTokens.call(
         embedder,
         texts.map((text) => textPrefix + text)
-      ),
+      )
+      if (!type) {
+        return lengths
+      }
+      const typedLengths = await countTokens.call(embedder, texts, type)
+      if (lengths.length !== texts.length || typedLengths.length !== texts.length) {
+        throw new Error('Token counter dropped containment inputs')
+      }
+      return lengths.map((length, index) => Math.max(length, typedLengths[index] ?? 0))
+    },
   }
+  return budget
 }
 
 /** One measurement pass over `texts`, rejecting a counter that drops inputs. */
@@ -278,17 +291,21 @@ export class SemanticChunker {
       return []
     }
 
-    const budget = await resolveContainmentBudget(embedder, textPrefix)
+    const budget = await resolveContainmentBudget(embedder, textPrefix, 'similarity')
     const units = budget ? await containUnits(sentenceUnits, budget) : sentenceUnits
 
     // Generate embeddings for all sentences
-    const embeddings = await embedder.embedBatch(units.map((unit) => unit.text))
+    const embeddings = await embedder.embedBatch(
+      units.map((unit) => unit.text),
+      'similarity'
+    )
 
     // Apply Max-Min algorithm to group sentences into chunks
     const sentenceGroups = this.groupSentences(units, embeddings)
 
     const admitted = sentenceGroups.filter((group) => this.admitsGroup(group))
-    const pieces = budget ? await containGroups(admitted, budget) : admitted
+    const documentBudget = await resolveContainmentBudget(embedder, textPrefix)
+    const pieces = documentBudget ? await containGroups(admitted, documentBudget) : admitted
 
     return convertPiecesToChunks(pieces)
   }

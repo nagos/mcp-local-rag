@@ -219,6 +219,7 @@ describe('handleQueryDocuments → VectorStore.search() options boundary', () =>
       scope: ['/docs', '/src'],
     })
 
+    expect(internals(server).embedder.embed).toHaveBeenCalledWith('typescript', 'query')
     expect(searchSpy).toHaveBeenCalledTimes(1)
     const call = expectDefined(searchSpy.mock.calls[0])
     const vector = call[0]

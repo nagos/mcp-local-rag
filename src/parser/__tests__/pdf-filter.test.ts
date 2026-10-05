@@ -109,6 +109,30 @@ describe('pdf-filter', () => {
         })),
       }))
 
+    it('uses the similarity embedding path for header and footer candidates', async () => {
+      const pages = createPagesWithSentences([
+        ['Heading A.', 'Body A.', 'Footer A.'],
+        ['Heading B.', 'Body B.', 'Footer B.'],
+        ['Heading C.', 'Body C.', 'Footer C.'],
+      ])
+      const embedder: EmbedderInterface = {
+        embedBatch: vi.fn().mockResolvedValue([
+          [1, 0],
+          [1, 0],
+          [1, 0],
+        ]),
+      }
+      await detectSentencePatterns(pages, embedder, { minPages: 3 })
+      expect(embedder.embedBatch).toHaveBeenCalledWith(
+        ['Heading A.', 'Heading B.', 'Heading C.'],
+        'similarity'
+      )
+      expect(embedder.embedBatch).toHaveBeenCalledWith(
+        ['Footer A.', 'Footer B.', 'Footer C.'],
+        'similarity'
+      )
+    })
+
     it('should return no patterns when pages < minPages', async () => {
       const pages = createPagesWithSentences([['Page 1 content.']])
       const embedder = createMockEmbedder([])
