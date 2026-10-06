@@ -41,6 +41,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "benchmark": "node benchmark/run.mjs",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "watch": "tsx watch src/index.ts",
