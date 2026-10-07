@@ -9,6 +9,11 @@ import {
 } from '@huggingface/transformers'
 import { AppError, toError } from '../utils/errors.js'
 import { isObjectLike } from '../utils/type-guards.js'
+import {
+  loadSentenceTransformersConfig,
+  type ModelPrompts,
+  resolveModelSettings,
+} from './sentence-transformers-config.js'
 
 // ============================================
 // Type Definitions
@@ -40,6 +45,9 @@ export interface EmbedderConfig {
   /** Add section paths to chunk embeddings when they fit (default: false). */
   headingPrefix?: boolean
 }
+
+/** Selects the model's prompt; omitted means its default prompt. */
+export type EmbeddingRole = 'query' | 'document'
 
 interface IndexedEmbeddingInput {
   text: string
@@ -271,6 +279,8 @@ export class Embedder {
    */
   private truncationWarned: boolean = false
   private degradedModeWarned: boolean = false
+  private prompts: ModelPrompts = { query: '', document: '', default: '' }
+  private warnings: string[] = []
   private readonly config: EmbedderConfig
 
   constructor(config: EmbedderConfig) {
@@ -283,6 +293,11 @@ export class Embedder {
 
   get titlePrefix(): boolean {
     return this.config.titlePrefix ?? false
+  }
+
+  /** Model settings this tool cannot honor; empty until the model loads. */
+  get modelWarnings(): readonly string[] {
+    return this.warnings
   }
 
   /**
@@ -320,20 +335,34 @@ export class Embedder {
     }
 
     // No fallback — if the requested device fails, init throws.
-    const device = this.config.device || 'cpu'
+    // The sole fp32 default literal. Both values pass through un-allowlisted
+    // (see `resolveDevice`) into a closed literal union.
+    // biome-ignore lint/nursery/noUnsafeTypeAssertion: un-allowlisted passthrough to a closed literal union
+    const device = (this.config.device || 'cpu') as DeviceType
+    // biome-ignore lint/nursery/noUnsafeTypeAssertion: un-allowlisted passthrough to a closed literal union
+    const dtype = (this.config.dtype ?? 'fp32') as DataType
 
     console.error(`Embedder: Setting cache directory to "${this.config.cacheDir}"`)
+
+    // Resolved before the pipeline: once `this.model` is set, `ensureInitialized`
+    // lets callers through, so no await may follow that assignment.
+    const settings = resolveModelSettings(
+      this.config.modelPath,
+      await loadSentenceTransformersConfig(this.config.modelPath, this.config.cacheDir, {
+        dtype,
+        device,
+      })
+    )
+    for (const warning of settings.warnings) {
+      console.error(`Embedder: ${warning}`)
+    }
+    this.prompts = settings.prompts
+    this.warnings = settings.warnings
+
     console.error(`Embedder: Loading model "${this.config.modelPath}" on device "${device}"...`)
 
     try {
-      this.model = await pipeline('feature-extraction', this.config.modelPath, {
-        // The sole fp32 default literal. Both values pass through
-        // un-allowlisted (see `resolveDevice`) into a closed literal union.
-        // biome-ignore lint/nursery/noUnsafeTypeAssertion: un-allowlisted passthrough to a closed literal union
-        dtype: (this.config.dtype ?? 'fp32') as DataType,
-        // biome-ignore lint/nursery/noUnsafeTypeAssertion: un-allowlisted passthrough to a closed literal union
-        device: device as DeviceType,
-      })
+      this.model = await pipeline('feature-extraction', this.config.modelPath, { dtype, device })
       const clamp = installTokenLimitClamp(this.model)
       this.tokenLimit = clamp.tokenLimit
       this.measurementTokenizer = clamp.measurementTokenizer
@@ -445,7 +474,7 @@ export class Embedder {
    */
   private async planTokenLengths(texts: string[]): Promise<number[]> {
     const tokenLimit = await this.getTokenLimit()
-    const trueLengths = await this.countTokens(texts)
+    const trueLengths = await this.measureTokens(texts)
     if (tokenLimit === null) {
       return trueLengths
     }
@@ -464,15 +493,32 @@ export class Embedder {
   }
 
   /**
-   * The true token length of each text, in input order. Tokenization only, no
-   * inference.
+   * The true token length of each text as embedded for `role`, prompt
+   * included, in input order. Tokenization only, no inference.
    *
    * Measured with `truncation: false` through the pre-clamp tokenizer, so a
    * length above {@link getTokenLimit} means inference will truncate. Throws
    * when no such tokenizer was captured, rather than returning a length
    * measured through an unknown surface.
    */
-  async countTokens(texts: string[]): Promise<number[]> {
+  async countTokens(texts: string[], role?: EmbeddingRole): Promise<number[]> {
+    await this.ensureInitialized()
+    return this.measureTokens(this.withPrompt(texts, role))
+  }
+
+  /** The prompt this model's config sets for documents, or `''`. */
+  async getDocumentPrompt(): Promise<string> {
+    await this.ensureInitialized()
+    return this.prompts.document
+  }
+
+  private withPrompt(texts: string[], role: EmbeddingRole | undefined): string[] {
+    const prompt = this.prompts[role ?? 'default']
+    return prompt === '' ? texts : texts.map((text) => prompt + text)
+  }
+
+  /** Measures `texts` as given; each caller applies the prompt exactly once. */
+  private async measureTokens(texts: string[]): Promise<number[]> {
     if (texts.length === 0) {
       return []
     }
@@ -498,8 +544,8 @@ export class Embedder {
    * Delegates to {@link embedBatch} so this path shares its clamp, measurement
    * and warning rather than reaching the pipeline unguarded.
    */
-  async embed(text: string): Promise<number[]> {
-    const embeddings = await this.embedBatch([text])
+  async embed(text: string, role?: EmbeddingRole): Promise<number[]> {
+    const embeddings = await this.embedBatch([text], role)
     const embedding = embeddings[0]
     if (embedding === undefined) {
       throw new EmbeddingError('Missing embedder batch output row')
@@ -508,7 +554,7 @@ export class Embedder {
   }
 
   /** Batched embedding; the vector dimension depends on the model. */
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], role?: EmbeddingRole): Promise<number[][]> {
     // Nothing to embed → skip model init entirely.
     if (texts.length === 0) {
       return []
@@ -532,10 +578,11 @@ export class Embedder {
         throw new EmbeddingError('Embedder pipeline is not callable')
       }
       const modelCall = this.model
+      const promptedTexts = this.withPrompt(texts, role)
       // One measurement per call, so planning and truncation reporting cannot
       // disagree about a length.
-      const plannedLengths = await this.planTokenLengths(texts)
-      const embeddings: (number[] | undefined)[] = Array.from({ length: texts.length })
+      const plannedLengths = await this.planTokenLengths(promptedTexts)
+      const embeddings: (number[] | undefined)[] = Array.from({ length: promptedTexts.length })
       const deferred: IndexedEmbeddingInput[] = []
 
       const embedInputs = async (inputs: IndexedEmbeddingInput[]): Promise<void> => {
@@ -563,8 +610,8 @@ export class Embedder {
         }
       }
 
-      for (let i = 0; i < texts.length; i += this.config.batchSize) {
-        const batchTexts = texts.slice(i, i + this.config.batchSize)
+      for (let i = 0; i < promptedTexts.length; i += this.config.batchSize) {
+        const batchTexts = promptedTexts.slice(i, i + this.config.batchSize)
         const indexedInputs = batchTexts.map((text, batchIndex) => {
           const originalIndex = i + batchIndex
           const tokenLength = plannedLengths[originalIndex]

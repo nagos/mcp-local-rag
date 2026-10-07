@@ -306,12 +306,12 @@ describe('CLI query', () => {
     expect(mocks.hydrateVisualAttachments).toHaveBeenCalledWith([result])
   })
 
-  it('should use embedBatch with query text for embedding generation', async () => {
+  it('should embed the query text behind the query prompt', async () => {
     mocks.search.mockResolvedValue([])
 
     await captureOutput(() => runQuery(['my search query']))
 
-    expect(mocks.embedBatch).toHaveBeenCalledWith(['my search query'])
+    expect(mocks.embedBatch).toHaveBeenCalledWith(['my search query'], 'query')
   })
 
   it('should pass limit to vectorStore.search', async () => {

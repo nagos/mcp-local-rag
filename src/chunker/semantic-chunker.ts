@@ -35,11 +35,14 @@ export interface SemanticChunkerConfig {
  * skips token containment.
  */
 export interface EmbedderInterface {
-  embedBatch(texts: string[]): Promise<number[][]>
+  /** `'document'` embeds behind the model's document prompt; omitted, its default prompt. */
+  embedBatch(texts: string[], role?: 'document'): Promise<number[][]>
   /** Resolved token cap, or `null` when no limit could be resolved. */
   getTokenLimit?(): Promise<number | null>
-  /** True, unclamped token lengths of each text. */
-  countTokens?(texts: string[]): Promise<number[]>
+  /** True, unclamped token lengths of each text, prompt included. */
+  countTokens?(texts: string[], role?: 'document'): Promise<number[]>
+  /** The model's document prompt, or `''`. */
+  getDocumentPrompt?(): Promise<string>
   /** Whether ingestion embeds chunks behind their document title. */
   readonly titlePrefix?: boolean
   /** Whether ingestion adds section paths to the final embedding input. */
@@ -118,8 +121,8 @@ function joinUnits(units: readonly SentenceUnit[]): string {
  * The embedder's token budget, or `null` when the optional members are absent
  * or no limit could be resolved. Containment is then skipped entirely.
  *
- * Every measurement is taken with `textPrefix` prepended, since the caller
- * embeds each chunk behind it.
+ * Every measurement is taken with `textPrefix` prepended and the document
+ * prompt applied, since the caller embeds each chunk behind both.
  */
 export async function resolveContainmentBudget(
   embedder: EmbedderInterface,
@@ -138,7 +141,8 @@ export async function resolveContainmentBudget(
     countTokens: (texts) =>
       countTokens.call(
         embedder,
-        texts.map((text) => textPrefix + text)
+        texts.map((text) => textPrefix + text),
+        'document'
       ),
   }
 }

@@ -29,11 +29,14 @@ function distanceToSpan(offset: number, chunk: TextChunk): number {
   return 0
 }
 
+const TITLE_KEY = 'Title:'
+
 /**
  * The `Title:` header a chunk is embedded behind, or `''` when the embedder
- * does not opt in, there is no title, or the header would take more than half
- * the token window: the chunker budgets every chunk for it, so a header near
- * the cap would shred the body into near-empty chunks.
+ * does not opt in, there is no title, the model's document prompt already
+ * starts with the same key, or the header would take more than half the token
+ * window: the chunker budgets every chunk for it, so a header near the cap
+ * would shred the body into near-empty chunks.
  */
 async function resolveTitlePrefix(
   title: string | null | undefined,
@@ -42,7 +45,11 @@ async function resolveTitlePrefix(
   if (!embedder.titlePrefix || !title) {
     return ''
   }
-  const prefix = `Title: ${title}\n\n`
+  const documentPrompt = (await embedder.getDocumentPrompt?.()) ?? ''
+  if (documentPrompt.toLowerCase().startsWith(TITLE_KEY.toLowerCase())) {
+    return ''
+  }
+  const prefix = `${TITLE_KEY} ${title}\n\n`
   const budget = await resolveContainmentBudget(embedder, '')
   if (budget === null) {
     return prefix
@@ -143,7 +150,7 @@ export async function buildChunksAndEmbeddings(
       : {}),
   }))
   const inputs = await embeddingInputs(contextualChunks, prefix, embedder)
-  return { chunks: contextualChunks, embeddings: await embedder.embedBatch(inputs) }
+  return { chunks: contextualChunks, embeddings: await embedder.embedBatch(inputs, 'document') }
 }
 
 /** Add optional section context only when the full body still fits. */

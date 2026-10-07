@@ -289,6 +289,16 @@ Einstellungen mit deinen tatsächlichen Fragen und prüfe, welche Textstellen ge
 Das Modell muss Mean Pooling und L2-Normalisierung unterstützen, da das Werkzeug damit die
 Embeddings berechnet.
 
+Enthält das Repository des Modells `config_sentence_transformers.json`, werden dessen Prompts
+verwendet: `query` für Suchanfragen, der erste von `document`, `passage` oder `corpus` für
+indexierte Chunks und der von `default_prompt_name` benannte Prompt für die Embeddings, mit
+denen Text aufgeteilt und Kopf- und Fußzeilen in PDFs erkannt werden. Die Datei wird nur beim
+Herunterladen des Modells gelesen, ein von einer früheren Version zwischengespeichertes Modell
+läuft also ohne sie. Beginnt der Dokument-Prompt bereits mit `title:`, fügt
+`EMBED_TITLE_PREFIX` keinen Titel hinzu. Setzt die Datei `similarity_fn_name` auf `manhattan`
+oder `model_type` auf einen anderen Wert als `SentenceTransformer`, wird das Modell nicht
+unterstützt: MCP-Tool-Antworten enthalten dann eine Warnung, und die CLI gibt sie aus.
+
 | Umgebungsvariable | CLI-Option | Standard | Beschreibung |
 |---------------------|----------|---------|-------------|
 | `MODEL_NAME` | `--model-name` | `Xenova/all-MiniLM-L6-v2` | Hugging-Face-Embedding-Modell |

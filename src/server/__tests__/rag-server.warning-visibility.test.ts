@@ -545,4 +545,54 @@ describe('query_documents attachment warning isolation', () => {
   })
 })
 
+describe('embedder model settings in tool responses', () => {
+  const dbPath = resolve('./tmp/test-lancedb-model-settings')
+  const MODEL_WARNING = 'Model "org/model" declares similarity_fn_name "manhattan".'
+  let server: RAGServer
+  let embedder: Embedder
+
+  beforeAll(() => {
+    mkdirSync(dbPath, { recursive: true })
+    server = new RAGServer(
+      withTestDevice({
+        dbPath,
+        modelName: 'Xenova/all-MiniLM-L6-v2',
+        cacheDir: testModelCacheDir(),
+        baseDir: dbPath,
+        maxFileSize: 100 * 1024 * 1024,
+      })
+    )
+    embedder = privateMembers<{ embedder: Embedder }>(server).embedder
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterAll(() => {
+    rmSync(dbPath, { recursive: true, force: true })
+  })
+
+  it('asks the LLM to tell the user about a model warning', async () => {
+    vi.spyOn(embedder, 'modelWarnings', 'get').mockReturnValue([MODEL_WARNING])
+
+    const result = await server.handleStatus()
+
+    const block = expectDefined(findWarningBlock(result.content, MODEL_WARNING))
+    expect(block.text).toContain('Tell the user about this configuration issue.')
+  })
+
+  it('embeds the search query behind the query prompt', async () => {
+    const embed = vi.spyOn(embedder, 'embed').mockResolvedValue([0.1, 0.2])
+    vi.spyOn(
+      privateMembers<{ vectorStore: VectorStore }>(server).vectorStore,
+      'search'
+    ).mockResolvedValue([])
+
+    await server.handleQueryDocuments({ query: 'rollback steps', limit: 1 })
+
+    expect(embed).toHaveBeenCalledWith('rollback steps', 'query')
+  })
+})
+
 type QueryResultShape = { text: string }

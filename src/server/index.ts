@@ -377,7 +377,7 @@ export class RAGServer {
 
   /** Every handler funnels through here, so the warning shape lives in one place. */
   private withWarnings<T extends RagContentBlock[]>(content: T): T {
-    return appendConfigWarnings(content, this.configWarnings)
+    return appendConfigWarnings(content, [...this.configWarnings, ...this.embedder.modelWarnings])
   }
 
   /**
@@ -511,7 +511,7 @@ export class RAGServer {
   async handleQueryDocuments(args: QueryDocumentsInput): Promise<{ content: QueryContent }> {
     // query_documents reads only LanceDB, so it stays callable in degraded
     // mode; `withWarnings` and `status` remain the diagnostic surface.
-    const queryVector = await this.embedder.embed(args.query)
+    const queryVector = await this.embedder.embed(args.query, 'query')
 
     // A reranker only improves on what the search returned, so it is given more
     // candidates than the caller asked for. `search` applies every filter and

@@ -49,11 +49,14 @@ const { mockPipeline, mockGetAvailableDtypes, mockOpenDocument } = vi.hoisted(()
 }))
 
 // Minimal `@huggingface/transformers` surface used by `src/embedder/index.ts`:
-// `pipeline`, `env` (cacheDir setter), and `ModelRegistry.get_available_dtypes`.
+// `pipeline`, `env` (cacheDir setter), and `ModelRegistry`.
 const transformersFactory = () => ({
   pipeline: mockPipeline,
   env: { cacheDir: '' },
-  ModelRegistry: { get_available_dtypes: mockGetAvailableDtypes },
+  ModelRegistry: {
+    get_available_dtypes: mockGetAvailableDtypes,
+    is_pipeline_cached: async () => true,
+  },
 })
 
 // Minimal single-page mupdf document. A single page means
