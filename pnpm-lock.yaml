@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@huggingface/transformers':
-        specifier: ^4.3.0
-        version: 4.3.0(@types/node@26.6.4)
+        specifier: ^4.3.1
+        version: 4.3.1(@types/node@26.6.4)
       '@lancedb/lancedb':
         specifier: ^0.39.0
         version: 0.39.0(@types/node@26.6.4)(apache-arrow@18.1.0)
@@ -377,8 +377,8 @@ packages:
   '@huggingface/transformers@3.0.2':
     resolution: {integrity: sha512-lTyS81eQazMea5UCehDGFMfdcNRZyei7XQLH5X6j4AhA/18Ka0+5qPgMxUxuZLU4xkv60aY2KNz9Yzthv6WVJg==}
 
-  '@huggingface/transformers@4.3.0':
-    resolution: {integrity: sha512-fL1A/WUZwouPrOlYxU5dzIwD2T5J781JiB2jDR8bFe5DwCj0Gfudq+NEXCMno49kQgajHA7xQkrRLJlqG1veEA==}
+  '@huggingface/transformers@4.3.1':
+    resolution: {integrity: sha512-5+voSeUCFK6PCKlY15dPhNOKq3/zOTxDN7oC+Wy9dFb1QZ0TSQomZRRy7URRK8YRuUoE9fGMQTTPC5d/pWBJhA==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -2877,7 +2877,7 @@ snapshots:
       sharp: 0.33.5
     optional: true
 
-  '@huggingface/transformers@4.3.0(@types/node@26.6.4)':
+  '@huggingface/transformers@4.3.1(@types/node@26.6.4)':
     dependencies:
       '@huggingface/jinja': 0.5.10
       '@huggingface/tokenizers': 0.2.0
