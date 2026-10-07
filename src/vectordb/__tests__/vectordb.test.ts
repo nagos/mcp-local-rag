@@ -1513,7 +1513,7 @@ describe('VectorStore', () => {
     describe('listSyncManifest projection', () => {
       // Row order is not a storage contract, so compare as a code-point-sorted
       // list (hashless entries first) rather than asserting insertion order.
-      const compare = (a: string, b: string): number => {
+      const compare = (a: string, b: string): -1 | 0 | 1 => {
         if (a < b) {
           return -1
         }
