@@ -59,7 +59,7 @@ describe('buildChunksAndEmbeddings title prefix', () => {
     const { result, chunkText, embedBatch } = await run(true)
 
     expect(chunkText.mock.calls[0]?.[3]).toBe('Title: Support Rotation\n\n')
-    expect(embedBatch).toHaveBeenCalledWith(['Title: Support Rotation\n\nBody.'])
+    expect(embedBatch).toHaveBeenCalledWith(['Title: Support Rotation\n\nBody.'], 'document')
     expect(result.chunks[0]?.text).toBe('Body.')
   })
 
@@ -67,7 +67,7 @@ describe('buildChunksAndEmbeddings title prefix', () => {
     const { chunkText, embedBatch } = await run(false)
 
     expect(chunkText.mock.calls[0]?.[3]).toBe('')
-    expect(embedBatch).toHaveBeenCalledWith(['Body.'])
+    expect(embedBatch).toHaveBeenCalledWith(['Body.'], 'document')
   })
 
   it('embeds behind the parser embedding title instead of the display title', async () => {
@@ -80,7 +80,7 @@ describe('buildChunksAndEmbeddings title prefix', () => {
       { embedBatch, titlePrefix: true }
     )
 
-    expect(embedBatch).toHaveBeenCalledWith(['Title: quarterly report\n\nBody.'])
+    expect(embedBatch).toHaveBeenCalledWith(['Title: quarterly report\n\nBody.'], 'document')
   })
 
   it('drops a title that would take more than half the token window', async () => {
@@ -89,7 +89,22 @@ describe('buildChunksAndEmbeddings title prefix', () => {
       countTokens: async (texts) => texts.map(() => 6),
     })
 
-    expect(embedBatch).toHaveBeenCalledWith(['Body.'])
+    expect(embedBatch).toHaveBeenCalledWith(['Body.'], 'document')
+  })
+
+  it.each(['title: none | text: ', 'TITLE: none | text: '])(
+    'skips the title when the document prompt %j already starts with it',
+    async (prompt) => {
+      const { embedBatch } = await run(true, { getDocumentPrompt: async () => prompt })
+
+      expect(embedBatch).toHaveBeenCalledWith(['Body.'], 'document')
+    }
+  )
+
+  it('keeps the title when the document prompt starts with another key', async () => {
+    const { embedBatch } = await run(true, { getDocumentPrompt: async () => 'passage: ' })
+
+    expect(embedBatch).toHaveBeenCalledWith(['Title: Support Rotation\n\nBody.'], 'document')
   })
 })
 
@@ -137,28 +152,29 @@ describe('buildChunksAndEmbeddings heading prefix', () => {
       { headingPrefix: true, getTokenLimit: async () => 512, countTokens, embedBatch },
       { sourceMap: { headings: [] } }
     )
-    expect(embedBatch).toHaveBeenCalledWith([text])
+    expect(embedBatch).toHaveBeenCalledWith([text], 'document')
     expect(countTokens).not.toHaveBeenCalled()
   })
 
   it('adds section context only to embedding input when enabled', async () => {
     const { result, embedBatch } = await run(true)
-    expect(embedBatch).toHaveBeenCalledWith([
-      'Section: Deployment > Rollback\n\nRestore the previous version.',
-    ])
+    expect(embedBatch).toHaveBeenCalledWith(
+      ['Section: Deployment > Rollback\n\nRestore the previous version.'],
+      'document'
+    )
     expect(result.chunks[0]?.text).toBe('Restore the previous version.')
     expect(result.chunks[0]?.sourceContext?.headingPaths).toEqual([['Deployment', 'Rollback']])
   })
 
   it('keeps metadata without changing embeddings when disabled', async () => {
     const { result, embedBatch } = await run(false)
-    expect(embedBatch).toHaveBeenCalledWith(['Restore the previous version.'])
+    expect(embedBatch).toHaveBeenCalledWith(['Restore the previous version.'], 'document')
     expect(result.chunks[0]?.sourceContext?.headingPaths).toEqual([['Deployment', 'Rollback']])
   })
 
   it.each([40, 60])('omits headings instead of truncating body at cap %i', async (cap) => {
     const { embedBatch } = await run(true, cap)
-    expect(embedBatch).toHaveBeenCalledWith(['Restore the previous version.'])
+    expect(embedBatch).toHaveBeenCalledWith(['Restore the previous version.'], 'document')
   })
   it('keeps the title and full body when additional headings overflow the input', async () => {
     const text = 'A sufficiently long body that must survive unchanged.'
@@ -177,7 +193,7 @@ describe('buildChunksAndEmbeddings heading prefix', () => {
       },
       { title: 'Guide', sourceMap: { headings: [{ offset: 0, level: 1, text: 'Deploy' }] } }
     )
-    expect(embedBatch).toHaveBeenCalledWith([`Title: Guide\n\n${text}`])
+    expect(embedBatch).toHaveBeenCalledWith([`Title: Guide\n\n${text}`], 'document')
   })
 
   it('combines title and each intersecting heading path when they fit', async () => {
@@ -199,8 +215,9 @@ describe('buildChunksAndEmbeddings heading prefix', () => {
         },
       }
     )
-    expect(embedBatch).toHaveBeenCalledWith([
-      `Title: Guide\n\nSection: Deploy\nSection: Verify\n\n${text}`,
-    ])
+    expect(embedBatch).toHaveBeenCalledWith(
+      [`Title: Guide\n\nSection: Deploy\nSection: Verify\n\n${text}`],
+      'document'
+    )
   })
 })

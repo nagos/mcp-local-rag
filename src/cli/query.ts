@@ -190,7 +190,7 @@ export async function runQuery(args: string[], globalOptions: GlobalOptions = {}
 
   try {
     // Generate query embedding
-    const embeddings = await embedder.embedBatch([queryText])
+    const embeddings = await embedder.embedBatch([queryText], 'query')
     const queryVector = embeddings[0]
     if (!queryVector) {
       throw new Error('Failed to generate query embedding')

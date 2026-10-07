@@ -21,7 +21,7 @@ import {
 // ============================================
 
 /** Lexicographic order, independent of locale. */
-function compareStrings(a: string, b: string): number {
+function compareStrings(a: string, b: string): -1 | 0 | 1 {
   if (a < b) {
     return -1
   }

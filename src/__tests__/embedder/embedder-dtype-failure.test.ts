@@ -33,6 +33,7 @@ const transformersFactory = () => ({
   env: asDouble<Record<string, string | undefined>>({}),
   ModelRegistry: {
     get_available_dtypes: mocks.getAvailableDtypes,
+    is_pipeline_cached: async () => true,
   },
 })
 

@@ -40,7 +40,7 @@ type RegisteredHandler = (
   extra: { signal: AbortSignal }
 ) => Promise<{ content: { type: string; text: string }[] }>
 
-async function dispatchTool(server: RAGServer, name: string, args: unknown): Promise<void> {
+async function dispatchTool(server: RAGServer, name: string, args: unknown): Promise<unknown> {
   const inner = privateMembers<{
     server: { _requestHandlers: Map<string, RegisteredHandler> }
   }>(server)
@@ -48,7 +48,7 @@ async function dispatchTool(server: RAGServer, name: string, args: unknown): Pro
   if (handler === undefined) {
     throw new Error('tools/call handler not registered')
   }
-  await handler(
+  return handler(
     { method: 'tools/call', params: { name, arguments: args } },
     { signal: new AbortController().signal }
   )
