@@ -284,16 +284,6 @@ Escolha um modelo de embeddings adequado ao idioma e ao assunto dos documentos. 
 configurações com suas consultas habituais e confira os trechos retornados. Escolha um modelo
 compatível com mean pooling e normalização L2, usados pela ferramenta para gerar os embeddings.
 
-Se o repositório do modelo incluir `config_sentence_transformers.json`, os prompts dele são
-aplicados: `query` às consultas de busca, o primeiro entre `document`, `passage` e `corpus` aos
-chunks indexados, e o prompt indicado por `default_prompt_name` aos embeddings usados para dividir
-o texto e detectar cabeçalhos e rodapés em PDFs. O arquivo só é lido no download do modelo, então
-um modelo armazenado em cache por uma versão anterior funciona sem ele. Se o prompt de documento
-já começar com `title:`, `EMBED_TITLE_PREFIX` não adiciona o título. Um arquivo que define
-`similarity_fn_name` como `manhattan`, ou `model_type` com um valor diferente de
-`SentenceTransformer`, indica um modelo sem suporte: as respostas das ferramentas MCP passam a
-incluir um aviso, e a CLI o exibe.
-
 | Variável de ambiente | Opção da CLI | Padrão | Descrição |
 |---------------------|----------|---------|-------------|
 | `MODEL_NAME` | `--model-name` | `Xenova/all-MiniLM-L6-v2` | Modelo de embeddings do Hugging Face |

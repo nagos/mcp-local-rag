@@ -278,15 +278,6 @@ Choose an embedding model for your documents’ language and subject. Compare se
 questions you actually ask and check which source passages are returned. The model must support
 mean pooling and L2 normalization, which this tool uses to produce embeddings.
 
-When the model's repository includes `config_sentence_transformers.json`, its prompts are applied:
-`query` to search queries, the first of `document`, `passage`, or `corpus` to indexed chunks, and
-the prompt named by `default_prompt_name` to the embeddings used for chunking and PDF header and
-footer detection. The file is read only when the model is downloaded, so a model cached by an
-earlier version runs without it. If the document prompt already starts with `title:`,
-`EMBED_TITLE_PREFIX` adds no title. A file that sets `similarity_fn_name` to `manhattan`, or
-`model_type` to anything other than `SentenceTransformer`, marks a model this tool does not
-support: MCP tool responses then carry a warning, and the CLI prints it.
-
 | Environment Variable | CLI Flag | Default | Description |
 |---------------------|----------|---------|-------------|
 | `MODEL_NAME` | `--model-name` | `Xenova/all-MiniLM-L6-v2` | Hugging Face embedding model |

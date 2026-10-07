@@ -237,8 +237,6 @@ MCP 服务器读取环境变量，CLI 支持下表中的变量和参数。需要
 
 根据文档的语言和主题选择嵌入模型。用实际会问的问题比较设置，检查返回的原文是否符合需求。本工具使用平均池化（mean pooling）和 L2 归一化生成嵌入向量，请选择兼容这两种处理方式的模型。
 
-如果模型仓库包含 `config_sentence_transformers.json`，会应用其中的提示词：搜索查询使用 `query`，已索引的文本块使用 `document`、`passage`、`corpus` 中第一个存在的提示词，分块和 PDF 页眉页脚检测所用的嵌入使用 `default_prompt_name` 指定的提示词。该文件只在下载模型时读取，因此旧版本已缓存的模型会在没有它的情况下运行。如果文档提示词已经以 `title:` 开头，`EMBED_TITLE_PREFIX` 不再添加标题。如果该文件将 `similarity_fn_name` 设为 `manhattan`，或将 `model_type` 设为 `SentenceTransformer` 以外的值，说明本工具不支持该模型：此时 MCP 工具的响应会附带警告，CLI 也会输出该警告。
-
 | 环境变量 | CLI 参数 | 默认值 | 说明 |
 |---------------------|----------|---------|-------------|
 | `MODEL_NAME` | `--model-name` | `Xenova/all-MiniLM-L6-v2` | Hugging Face 嵌入模型 |
