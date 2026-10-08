@@ -473,6 +473,33 @@ describe('MCP sync tools', () => {
   // Failure (SYNC-004)
   // --------------------------------------------
 
+  it('skips a corrupt PDF and indexes the TXT files before and after it', async () => {
+    const fixture = await makeFixture('corrupt-pdf')
+    const root = fixture.roots[0] ?? ''
+    const firstPath = await writeFixtureFile(join(root, '1.txt'), 'test1 '.repeat(20))
+    await writeFixtureFile(join(root, '2.pdf'), 'test2')
+    const lastPath = await writeFixtureFile(join(root, '3.txt'), 'test3 '.repeat(20))
+    const server = await makeServer(fixture)
+    try {
+      const jobId = await syncStart(server)
+      const terminal = lastSnapshot(await pollUntilTerminal(server, jobId))
+      expect(terminal.state).toBe('succeeded')
+      expect(terminal.error).toBeNull()
+      expect(terminal.total).toBe(3)
+      expect(terminal.completed).toBe(2)
+      expect(terminal.summary).toEqual({ upserted: 2, skipped: 0, empty: 0, pruned: 0 })
+      expect(await storedPaths(fixture)).toEqual([firstPath, lastPath])
+
+      const retryId = await syncStart(server)
+      const retry = lastSnapshot(await pollUntilTerminal(server, retryId))
+      expect(retry.state).toBe('succeeded')
+      expect(retry.summary).toEqual({ upserted: 0, skipped: 2, empty: 0, pruned: 0 })
+      expect(retry.warnings).toEqual(terminal.warnings)
+    } finally {
+      await server.close()
+    }
+  }, 45000)
+
   it('reaches failed with one error naming the file and performs no prune', async () => {
     const fixture = await makeFixture('failure')
     const rootDir = fixture.roots[0] ?? ''

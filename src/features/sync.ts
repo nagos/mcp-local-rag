@@ -17,6 +17,7 @@
 // `platform` is an explicit input, so Windows key semantics are provable from a
 // POSIX host.
 
+import { isAppError } from '../utils/errors.js'
 import { isManagedRawDataPath } from '../utils/raw-data-utils.js'
 import type { ScanEntryKind } from '../utils/scan.js'
 import { isUnderOrEqual } from '../utils/scope-match.js'
@@ -545,7 +546,7 @@ interface ExecutionState {
   prunedPaths: string[]
 }
 
-/** Ingest every planned file, stopping at the first failure. */
+/** Ingest every planned file, skipping unreadable or invalid documents. */
 async function runUpserts(
   plan: SyncPlan,
   executor: SyncExecutor,
@@ -570,6 +571,16 @@ async function runUpserts(
         await executor.deleteExactPath(stalePath)
       }
     } catch (caught) {
+      if (
+        isAppError(caught) &&
+        caught.layer === 'parser' &&
+        (caught.kind === 'io' || caught.kind === 'validation')
+      ) {
+        console.error(
+          `Warning: Skipped document: ${formatSyncError({ message: caught.message, filePath: action.filePath })}`
+        )
+        continue
+      }
       state.error = { message: toMessage(caught), filePath: action.filePath }
       return
     }
